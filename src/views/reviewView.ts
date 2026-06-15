@@ -137,6 +137,9 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
                 case 'review:export':
                     await this._handleExport();
                     break;
+                case 'review:generateFromInput':
+                    await this._handleGenerateFromInput(message.payload);
+                    break;
             }
         });
     }
@@ -206,6 +209,14 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
             );
             vscode.window.showInformationMessage('评审报告已导出');
         }
+    }
+
+    private async _handleGenerateFromInput(payload: { content: string }): Promise<void> {
+        if (!payload.content || !payload.content.trim()) {
+            return;
+        }
+
+        await this.generateReview(payload.content, 'input-' + Date.now());
     }
 
     private async _generateQualityScore(content: string): Promise<number> {

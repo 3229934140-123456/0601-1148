@@ -159,6 +159,12 @@ export class CompareViewProvider implements vscode.WebviewViewProvider {
                 case 'compare:run':
                     await this._handleRun(message.payload);
                     break;
+                case 'compare:runFromInput':
+                    await this._handleRunFromInput(message.payload);
+                    break;
+                case 'compare:markHallucination':
+                    await this._handleMarkHallucination(message.payload);
+                    break;
             }
         });
     }
@@ -191,6 +197,51 @@ export class CompareViewProvider implements vscode.WebviewViewProvider {
 
     private async _handleRun(payload: any): Promise<void> {
         vscode.commands.executeCommand('aiStudio.runCompare');
+    }
+
+    private async _handleRunFromInput(payload: { content: string }): Promise<void> {
+        if (!payload.content || !payload.content.trim()) {
+            return;
+        }
+
+        const config = vscode.workspace.getConfiguration('aiStudio');
+        const providers = this._aiService.getAvailableProviders();
+        const modelConfigs: { provider: string; model: string }[] = [];
+
+        for (const provider of providers) {
+            let model = config.get<string>('defaultModel', 'gpt-3.5-turbo');
+            if (provider === 'Ollama') {
+                model = config.get<string>('providers.ollama.model', 'llama2');
+            }
+            modelConfigs.push({ provider, model });
+        }
+
+        await this.runComparison(payload.content, modelConfigs);
+    }
+
+    private async _handleMarkHallucination(payload: {
+        responseId: string;
+        hallucination: types.HallucinationPoint;
+    }): Promise<void> {
+        if (!this._compareResult) {
+            return;
+        }
+
+        const response = this._compareResult.responses.find(r => r.id === payload.responseId);
+        if (response) {
+            if (!response.hallucinations) {
+                response.hallucinations = [];
+            }
+            response.hallucinations.push(payload.hallucination);
+
+            await this._storage.updateCompareResult(this._compareResult.id, {
+                responses: this._compareResult.responses
+            });
+
+            vscode.window.showInformationMessage(
+                `已标记幻觉点：${payload.hallucination.text.slice(0, 20)}${payload.hallucination.text.length > 20 ? '...' : ''}`
+            );
+        }
     }
 
     private _estimateTokens(text: string): number {

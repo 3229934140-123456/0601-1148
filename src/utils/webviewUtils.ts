@@ -800,13 +800,19 @@ function getCompareViewContent(): string {
     <div class="compare-container">
         <div class="compare-header">
             <div class="compare-title" id="compareTitle">对比运行</div>
-            <div class="compare-meta" id="compareMeta">选择模型进行对比测试</div>
+            <div class="compare-meta" id="compareMeta">输入内容后点击运行，多模型并排对比</div>
         </div>
         <div class="compare-content" id="compareContent">
             <div class="empty-state" style="flex: 1;">
                 <div class="empty-state-icon">🔄</div>
-                <div class="empty-state-text">暂无对比数据</div>
-                <div class="empty-state-hint">运行对比测试后查看结果</div>
+                <div class="empty-state-text">在下方输入内容开始对比</div>
+                <div class="empty-state-hint">支持输入提示词或需求文本</div>
+            </div>
+        </div>
+        <div class="input-area" id="compareInputArea">
+            <textarea class="input-textarea" id="compareInput" placeholder="输入要对比测试的内容，例如一段提示词或需求描述..." style="min-height:60px;max-height:160px;"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-primary" id="runCompareBtn" style="flex:1;">▶ 运行对比</button>
             </div>
         </div>
     </div>
@@ -830,8 +836,14 @@ function getReviewViewContent(): string {
         <div class="review-content scrollable" id="reviewContent">
             <div class="empty-state">
                 <div class="empty-state-icon">📋</div>
-                <div class="empty-state-text">暂无评审报告</div>
-                <div class="empty-state-hint">对回答进行评审后查看报告</div>
+                <div class="empty-state-text">在下方输入内容开始评审</div>
+                <div class="empty-state-hint">支持输入 AI 回答、需求文档等文本</div>
+            </div>
+        </div>
+        <div class="input-area" id="reviewInputArea">
+            <textarea class="input-textarea" id="reviewInput" placeholder="输入待评审内容，例如 AI 的回答或需求描述..." style="min-height:60px;max-height:160px;"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-primary" id="generateReviewBtn" style="flex:1;">✨ 生成评审</button>
             </div>
         </div>
     </div>
@@ -1103,18 +1115,30 @@ function getCompareScript(): string {
             var compareContent = document.getElementById('compareContent');
             var compareTitle = document.getElementById('compareTitle');
             var compareMeta = document.getElementById('compareMeta');
+            var compareInput = document.getElementById('compareInput');
+            var runCompareBtn = document.getElementById('runCompareBtn');
 
             var compareData = initialData;
+            var isRunning = false;
 
             function renderCompare() {
                 if (!compareData || !compareData.responses || compareData.responses.length === 0) {
-                    compareContent.innerHTML = \`
-                        <div class="empty-state" style="flex: 1;">
-                            <div class="empty-state-icon">🔄</div>
-                            <div class="empty-state-text">暂无对比数据</div>
-                            <div class="empty-state-hint">运行对比测试后查看结果</div>
-                        </div>
-                    \`;
+                    if (isRunning) {
+                        compareContent.innerHTML = \`
+                            <div class="loading" style="flex: 1;">
+                                <div class="loading-spinner"></div>
+                                <span>正在运行对比，请稍候...</span>
+                            </div>
+                        \`;
+                    } else {
+                        compareContent.innerHTML = \`
+                            <div class="empty-state" style="flex: 1;">
+                                <div class="empty-state-icon">🔄</div>
+                                <div class="empty-state-text">在下方输入内容开始对比</div>
+                                <div class="empty-state-hint">支持输入提示词或需求文本</div>
+                            </div>
+                        \`;
+                    }
                     return;
                 }
 
@@ -1159,19 +1183,24 @@ function getCompareScript(): string {
                     hallucinationsHtml += '</div>';
                 }
 
+                var respId = response.id || 'resp-' + index;
+
                 return \`
-                    <div class="compare-panel" data-id="\${response.id || 'resp-' + index}">
+                    <div class="compare-panel" data-id="\${respId}">
                         <div class="compare-panel-header">
                             <div class="compare-panel-title">\${escapeHtml(response.model)}</div>
                             <div class="compare-panel-meta">\${escapeHtml(response.provider || '')}</div>
                         </div>
-                        <div class="compare-panel-body">\${escapeHtml(response.content)}</div>
+                        <div class="compare-panel-body" id="body-\${respId}">\${escapeHtml(response.content)}</div>
                         \${hallucinationsHtml}
                         <div class="compare-panel-footer">
-                            <div class="rating-stars" data-response-id="\${response.id || 'resp-' + index}">
+                            <div class="rating-stars" data-response-id="\${respId}">
                                 \${starsHtml}
                             </div>
-                            <div class="compare-panel-meta">\${escapeHtml(metaText)}</div>
+                            <div style="display:flex;gap:4px;align-items:center;">
+                                <button class="message-action-btn hall-mark-btn" data-response-id="\${respId}" title="标记幻觉点">⚠ 标记</button>
+                                <div class="compare-panel-meta">\${escapeHtml(metaText)}</div>
+                            </div>
                         </div>
                     </div>
                 \`;
@@ -1191,11 +1220,7 @@ function getCompareScript(): string {
                         star.addEventListener('mouseenter', function() {
                             var rating = parseInt(this.dataset.rating);
                             stars.forEach(function(s, idx) {
-                                if (idx < rating) {
-                                    s.classList.add('active');
-                                } else {
-                                    s.classList.remove('active');
-                                }
+                                if (idx < rating) { s.classList.add('active'); } else { s.classList.remove('active'); }
                             });
                         });
                     });
@@ -1205,17 +1230,19 @@ function getCompareScript(): string {
                         if (compareData && compareData.responses) {
                             var responseId = container.dataset.responseId;
                             var response = compareData.responses.find(function(r) { return r.id === responseId; });
-                            if (response) {
-                                currentRating = response.rating || 0;
-                            }
+                            if (response) { currentRating = response.rating || 0; }
                         }
                         stars.forEach(function(s, idx) {
-                            if (idx < currentRating) {
-                                s.classList.add('active');
-                            } else {
-                                s.classList.remove('active');
-                            }
+                            if (idx < currentRating) { s.classList.add('active'); } else { s.classList.remove('active'); }
                         });
+                    });
+                });
+
+                var hallMarkBtns = document.querySelectorAll('.hall-mark-btn');
+                hallMarkBtns.forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var responseId = this.dataset.responseId;
+                        handleMarkHallucination(responseId);
                     });
                 });
             }
@@ -1223,16 +1250,73 @@ function getCompareScript(): string {
             function handleRating(responseId, rating) {
                 if (compareData && compareData.responses) {
                     var response = compareData.responses.find(function(r) { return r.id === responseId; });
-                    if (response) {
-                        response.rating = rating;
-                    }
+                    if (response) { response.rating = rating; }
                 }
                 renderCompare();
                 postMessage('compare:rate', { responseId: responseId, rating: rating });
             }
 
+            function handleMarkHallucination(responseId) {
+                var bodyEl = document.getElementById('body-' + responseId);
+                var selection = window.getSelection();
+                var selectedText = '';
+
+                if (selection && selection.toString().trim()) {
+                    selectedText = selection.toString().trim();
+                }
+
+                if (!selectedText && bodyEl) {
+                    selectedText = prompt('请输入要标记为幻觉的文本：');
+                }
+
+                if (!selectedText) { return; }
+
+                var reason = prompt('标记原因（可选）：');
+
+                var hallucination = {
+                    id: 'hall-' + Date.now().toString(36),
+                    text: selectedText,
+                    reason: reason || undefined
+                };
+
+                if (compareData && compareData.responses) {
+                    var response = compareData.responses.find(function(r) { return r.id === responseId; });
+                    if (response) {
+                        if (!response.hallucinations) { response.hallucinations = []; }
+                        response.hallucinations.push(hallucination);
+                    }
+                }
+
+                renderCompare();
+                postMessage('compare:markHallucination', {
+                    responseId: responseId,
+                    hallucination: hallucination
+                });
+            }
+
+            runCompareBtn.addEventListener('click', function() {
+                var content = compareInput.value.trim();
+                if (!content) { return; }
+                if (isRunning) { return; }
+
+                isRunning = true;
+                runCompareBtn.disabled = true;
+                runCompareBtn.textContent = '运行中...';
+                renderCompare();
+
+                postMessage('compare:runFromInput', { content: content });
+            });
+
+            compareInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+            });
+
             messageHandlers['compare:setData'] = function(payload) {
                 compareData = payload;
+                isRunning = false;
+                runCompareBtn.disabled = false;
+                runCompareBtn.textContent = '▶ 运行对比';
                 renderCompare();
             };
 
@@ -1248,6 +1332,13 @@ function getCompareScript(): string {
                 }
             };
 
+            messageHandlers['compare:running'] = function(payload) {
+                isRunning = true;
+                runCompareBtn.disabled = true;
+                runCompareBtn.textContent = '运行中...';
+                renderCompare();
+            };
+
             renderCompare();
     `;
 }
@@ -1257,18 +1348,30 @@ function getReviewScript(): string {
             var reviewContent = document.getElementById('reviewContent');
             var refreshBtn = document.getElementById('refreshBtn');
             var exportBtn = document.getElementById('exportBtn');
+            var reviewInput = document.getElementById('reviewInput');
+            var generateReviewBtn = document.getElementById('generateReviewBtn');
 
             var reviewData = initialData;
+            var isGenerating = false;
 
             function renderReview() {
                 if (!reviewData || (!reviewData.rewriteSuggestions && !reviewData.acceptanceCriteria && reviewData.qualityScore === undefined)) {
-                    reviewContent.innerHTML = \`
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📋</div>
-                            <div class="empty-state-text">暂无评审报告</div>
-                            <div class="empty-state-hint">对回答进行评审后查看报告</div>
-                        </div>
-                    \`;
+                    if (isGenerating) {
+                        reviewContent.innerHTML = \`
+                            <div class="loading">
+                                <div class="loading-spinner"></div>
+                                <span>正在生成评审报告...</span>
+                            </div>
+                        \`;
+                    } else {
+                        reviewContent.innerHTML = \`
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📋</div>
+                                <div class="empty-state-text">在下方输入内容开始评审</div>
+                                <div class="empty-state-hint">支持输入 AI 回答、需求文档等文本</div>
+                            </div>
+                        \`;
+                    }
                     return;
                 }
 
@@ -1355,6 +1458,24 @@ function getReviewScript(): string {
                 renderReview();
             }
 
+            generateReviewBtn.addEventListener('click', function() {
+                var content = reviewInput.value.trim();
+                if (!content) { return; }
+                if (isGenerating) { return; }
+
+                isGenerating = true;
+                generateReviewBtn.disabled = true;
+                generateReviewBtn.textContent = '生成中...';
+                renderReview();
+
+                postMessage('review:generateFromInput', { content: content });
+            });
+
+            reviewInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+            });
+
             refreshBtn.addEventListener('click', function() {
                 postMessage('review:refresh', {});
             });
@@ -1365,6 +1486,9 @@ function getReviewScript(): string {
 
             messageHandlers['review:setData'] = function(payload) {
                 reviewData = payload;
+                isGenerating = false;
+                generateReviewBtn.disabled = false;
+                generateReviewBtn.textContent = '✨ 生成评审';
                 renderReview();
             };
 
@@ -1387,6 +1511,13 @@ function getReviewScript(): string {
                     reviewData.acceptanceCriteria = payload.criteria || [];
                     renderReview();
                 }
+            };
+
+            messageHandlers['review:generating'] = function(payload) {
+                isGenerating = true;
+                generateReviewBtn.disabled = true;
+                generateReviewBtn.textContent = '生成中...';
+                renderReview();
             };
 
             renderReview();
