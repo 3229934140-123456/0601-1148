@@ -154,6 +154,31 @@
         "command": "aiStudio.addToFavorites",
         "title": "AI 助手：添加到收藏",
         "icon": "$(star-empty)"
+      },
+      {
+        "command": "aiStudio.copySnippet",
+        "title": "AI 助手：复制片段内容",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "aiStudio.insertSnippet",
+        "title": "AI 助手：插入片段到文档",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiStudio.openSnippet",
+        "title": "AI 助手：打开片段",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "aiStudio.deleteSnippet",
+        "title": "AI 助手：删除片段",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "aiStudio.openFavorite",
+        "title": "AI 助手：打开收藏项",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {
@@ -214,6 +239,33 @@
           "command": "aiStudio.addToFavorites",
           "when": "editorHasSelection",
           "group": "ai-studio@5"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "aiStudio.copySnippet",
+          "when": "viewItem == snippet",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "aiStudio.insertSnippet",
+          "when": "viewItem == snippet",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "aiStudio.openSnippet",
+          "when": "viewItem == snippet",
+          "group": "1_modification@3"
+        },
+        {
+          "command": "aiStudio.deleteSnippet",
+          "when": "viewItem == snippet",
+          "group": "2_deletion@1"
+        },
+        {
+          "command": "aiStudio.openFavorite",
+          "when": "viewItem == favorite",
+          "group": "1_modification@1"
         }
       ]
     },

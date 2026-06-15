@@ -2,10 +2,10 @@ import * as vscode from 'vscode';
 import * as types from '../types';
 import { StorageService } from '../services/storage';
 
-type FavoriteTreeItem = FavoriteTypeGroupItem | FavoriteItem;
+type FavoritesTreeItem = FavoriteTypeGroupItem | FavoriteItem | SnippetGroupItem | SnippetItem;
 
 interface FavoriteTypeGroupItem {
-  type: 'group';
+  type: 'favoriteGroup';
   favoriteType: types.FavoriteItem['type'];
   favorites: types.FavoriteItem[];
 }
@@ -15,8 +15,19 @@ interface FavoriteItem {
   favorite: types.FavoriteItem;
 }
 
-export class FavoritesProvider implements vscode.TreeDataProvider<FavoriteTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<FavoriteTreeItem | undefined | null | void>();
+interface SnippetGroupItem {
+  type: 'snippetGroup';
+  category: string;
+  snippets: types.Snippet[];
+}
+
+interface SnippetItem {
+  type: 'snippet';
+  snippet: types.Snippet;
+}
+
+export class FavoritesProvider implements vscode.TreeDataProvider<FavoritesTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<FavoritesTreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private storageService: StorageService;
@@ -29,31 +40,50 @@ export class FavoritesProvider implements vscode.TreeDataProvider<FavoriteTreeIt
     this._onDidChangeTreeData.fire();
   }
 
-  getTreeItem(element: FavoriteTreeItem): vscode.TreeItem {
+  getTreeItem(element: FavoritesTreeItem): vscode.TreeItem {
     switch (element.type) {
-      case 'group':
-        return this.getGroupTreeItem(element);
+      case 'favoriteGroup':
+        return this.getFavoriteGroupTreeItem(element);
       case 'favorite':
         return this.getFavoriteTreeItem(element);
+      case 'snippetGroup':
+        return this.getSnippetGroupTreeItem(element);
+      case 'snippet':
+        return this.getSnippetTreeItem(element);
     }
   }
 
-  async getChildren(element?: FavoriteTreeItem): Promise<FavoriteTreeItem[]> {
+  async getChildren(element?: FavoritesTreeItem): Promise<FavoritesTreeItem[]> {
     if (!element) {
-      return this.getTypeGroups();
+      return this.getRootGroups();
     }
 
     switch (element.type) {
-      case 'group':
+      case 'favoriteGroup':
         return this.getFavoritesForGroup(element);
+      case 'snippetGroup':
+        return this.getSnippetsForGroup(element);
       case 'favorite':
+      case 'snippet':
         return [];
     }
   }
 
-  private getGroupTreeItem(item: FavoriteTypeGroupItem): vscode.TreeItem {
+  private async getRootGroups(): Promise<FavoritesTreeItem[]> {
+    const groups: FavoritesTreeItem[] = [];
+
+    const snippetGroups = await this.getSnippetGroups();
+    groups.push(...snippetGroups);
+
+    const favoriteGroups = await this.getFavoriteTypeGroups();
+    groups.push(...favoriteGroups);
+
+    return groups;
+  }
+
+  private getFavoriteGroupTreeItem(item: FavoriteTypeGroupItem): vscode.TreeItem {
     const treeItem = new vscode.TreeItem(
-      this.getTypeLabel(item.favoriteType),
+      `⭐ ${this.getTypeLabel(item.favoriteType)}`,
       vscode.TreeItemCollapsibleState.Collapsed
     );
 
@@ -75,6 +105,44 @@ export class FavoritesProvider implements vscode.TreeDataProvider<FavoriteTreeIt
     treeItem.tooltip = this.getFavoriteTooltip(item.favorite);
     treeItem.iconPath = this.getTypeIcon(item.favorite.type);
     treeItem.contextValue = 'favorite';
+    treeItem.command = {
+      command: 'aiStudio.openFavorite',
+      title: '打开',
+      arguments: [item.favorite]
+    };
+
+    return treeItem;
+  }
+
+  private getSnippetGroupTreeItem(item: SnippetGroupItem): vscode.TreeItem {
+    const treeItem = new vscode.TreeItem(
+      `📝 ${item.category}`,
+      vscode.TreeItemCollapsibleState.Collapsed
+    );
+
+    treeItem.description = `${item.snippets.length} 个片段`;
+    treeItem.tooltip = `分类：${item.category}\n共 ${item.snippets.length} 个片段`;
+    treeItem.iconPath = new vscode.ThemeIcon('folder');
+    treeItem.contextValue = 'snippetGroup';
+
+    return treeItem;
+  }
+
+  private getSnippetTreeItem(item: SnippetItem): vscode.TreeItem {
+    const treeItem = new vscode.TreeItem(
+      item.snippet.name,
+      vscode.TreeItemCollapsibleState.None
+    );
+
+    treeItem.description = `${item.snippet.usageCount || 0} 次使用`;
+    treeItem.tooltip = this.getSnippetTooltip(item.snippet);
+    treeItem.iconPath = new vscode.ThemeIcon('code');
+    treeItem.contextValue = 'snippet';
+    treeItem.command = {
+      command: 'aiStudio.copySnippet',
+      title: '复制内容',
+      arguments: [item.snippet]
+    };
 
     return treeItem;
   }
@@ -90,11 +158,26 @@ export class FavoritesProvider implements vscode.TreeDataProvider<FavoriteTreeIt
     return lines.join('\n');
   }
 
+  private getSnippetTooltip(snippet: types.Snippet): string {
+    const lines: string[] = [];
+    lines.push(`名称: ${snippet.name}`);
+    lines.push(`分类: ${snippet.category}`);
+    lines.push(`使用次数: ${snippet.usageCount || 0}`);
+    lines.push(`创建时间: ${this.formatDate(snippet.createdAt)}`);
+    lines.push('');
+    lines.push('内容:');
+    lines.push(snippet.content.slice(0, 200));
+    if (snippet.content.length > 200) {
+      lines.push('...');
+    }
+    return lines.join('\n');
+  }
+
   private getTypeLabel(type: types.FavoriteItem['type']): string {
     const labels: Record<types.FavoriteItem['type'], string> = {
       prompt: '提示词',
       sample: '样例',
-      snippet: '片段',
+      snippet: '收藏片段',
       conversation: '对话'
     };
     return labels[type] || type;
@@ -104,13 +187,47 @@ export class FavoritesProvider implements vscode.TreeDataProvider<FavoriteTreeIt
     const icons: Record<types.FavoriteItem['type'], string> = {
       prompt: 'file-text',
       sample: 'beaker',
-      snippet: 'code',
+      snippet: 'star',
       conversation: 'comment'
     };
     return new vscode.ThemeIcon(icons[type] || 'star');
   }
 
-  private async getTypeGroups(): Promise<FavoriteTypeGroupItem[]> {
+  private async getSnippetGroups(): Promise<SnippetGroupItem[]> {
+    const snippets = await this.storageService.getSnippets();
+
+    const groupMap = new Map<string, SnippetGroupItem>();
+
+    for (const snippet of snippets) {
+      const category = snippet.category || '未分类';
+      if (!groupMap.has(category)) {
+        groupMap.set(category, {
+          type: 'snippetGroup',
+          category,
+          snippets: []
+        });
+      }
+      groupMap.get(category)!.snippets.push(snippet);
+    }
+
+    const groups: SnippetGroupItem[] = [];
+    for (const group of Array.from(groupMap.values())) {
+      group.snippets.sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0));
+      groups.push(group);
+    }
+
+    groups.sort((a, b) => a.category.localeCompare(b.category));
+    return groups;
+  }
+
+  private getSnippetsForGroup(group: SnippetGroupItem): SnippetItem[] {
+    return group.snippets.map(snippet => ({
+      type: 'snippet',
+      snippet
+    }));
+  }
+
+  private async getFavoriteTypeGroups(): Promise<FavoriteTypeGroupItem[]> {
     const favorites = await this.storageService.getFavorites();
 
     const groupMap = new Map<types.FavoriteItem['type'], FavoriteTypeGroupItem>();
@@ -118,7 +235,7 @@ export class FavoritesProvider implements vscode.TreeDataProvider<FavoriteTreeIt
     const typesList: types.FavoriteItem['type'][] = ['prompt', 'sample', 'snippet', 'conversation'];
     for (const type of typesList) {
       groupMap.set(type, {
-        type: 'group',
+        type: 'favoriteGroup',
         favoriteType: type,
         favorites: []
       });

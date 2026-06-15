@@ -5,6 +5,8 @@ export interface Message {
   timestamp: number;
   model?: string;
   provider?: string;
+  rating?: number;
+  hallucinations?: HallucinationPoint[];
 }
 
 export interface Conversation {

@@ -13,6 +13,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     private _storage: StorageService;
     private _aiService: AIService;
     private _isStreaming: boolean = false;
+    private _currentAssistantMessageId?: string;
 
     constructor(
         extensionUri: vscode.Uri,
@@ -46,7 +47,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     public async sendMessage(content: string): Promise<void> {
-        if (!this._view) {
+        if (!this._view || this._isStreaming) {
             return;
         }
 
@@ -68,10 +69,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             userMessage
         );
 
-        if (savedUserMessage) {
-            this._conversation.messages.push(savedUserMessage);
-            this._sendToWebview('chat:response', savedUserMessage);
+        if (!savedUserMessage) {
+            return;
         }
+
+        this._conversation.messages = [savedUserMessage];
+        this._currentAssistantMessageId = undefined;
+        this._sendToWebview('chat:setMessages', { messages: [savedUserMessage] });
 
         await this._streamResponse(content);
     }
@@ -81,6 +85,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             await this._storage.deleteConversation(this._conversation.id);
         }
         this._conversation = undefined;
+        this._currentAssistantMessageId = undefined;
         if (this._view) {
             this._sendToWebview('chat:setMessages', { messages: [] });
         }
@@ -88,6 +93,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     public async setConversation(conversation: types.Conversation): Promise<void> {
         this._conversation = conversation;
+        this._currentAssistantMessageId = undefined;
         if (this._view) {
             this._sendToWebview('chat:setMessages', {
                 messages: conversation.messages
@@ -102,6 +108,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         const question = `请帮我分析以下内容：\n\n${selectedText}`;
         await this.sendMessage(question);
+    }
+
+    private _getLastAssistantMessage(): types.Message | undefined {
+        if (!this._conversation) {
+            return undefined;
+        }
+        return [...this._conversation.messages]
+            .reverse()
+            .find(m => m.role === 'assistant');
     }
 
     private _getHtmlForWebview(webview: vscode.Webview): string {
@@ -147,30 +162,52 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     private async _handleCopy(payload: { messageId: string }): Promise<void> {
-        vscode.window.showInformationMessage('已复制到剪贴板');
+        const message = this._conversation?.messages.find(m => m.id === payload.messageId);
+        if (message) {
+            await vscode.env.clipboard.writeText(message.content);
+            vscode.window.showInformationMessage('已复制到剪贴板');
+        }
     }
 
     private async _handleRate(payload: { messageId: string }): Promise<void> {
-        const rating = await vscode.window.showQuickPick(
-            ['1 星', '2 星', '3 星', '4 星', '5 星'],
-            { placeHolder: '请选择评分' }
-        );
+        const assistantMessage = this._getLastAssistantMessage();
+        if (!assistantMessage) {
+            vscode.window.showWarningMessage('没有可评分的 AI 回答');
+            return;
+        }
 
-        if (rating) {
-            vscode.window.showInformationMessage(`已评分：${rating}`);
+        const ratingOptions = [
+            { label: '⭐ 1 星 - 很差', value: 1 },
+            { label: '⭐⭐ 2 星 - 较差', value: 2 },
+            { label: '⭐⭐⭐ 3 星 - 一般', value: 3 },
+            { label: '⭐⭐⭐⭐ 4 星 - 较好', value: 4 },
+            { label: '⭐⭐⭐⭐⭐ 5 星 - 很好', value: 5 }
+        ];
+
+        const selected = await vscode.window.showQuickPick(ratingOptions, {
+            placeHolder: `请为这条回答评分（ID: ${assistantMessage.id.slice(0, 8)}）`
+        });
+
+        if (selected) {
+            (assistantMessage as any).rating = selected.value;
+            await this._storage.updateConversation(this._conversation!.id, {
+                messages: this._conversation!.messages
+            });
+            vscode.window.showInformationMessage(`已评分：${selected.value} 星`);
         }
     }
 
     private async _handleReview(payload: { messageId: string }): Promise<void> {
-        const message = this._conversation?.messages.find(m => m.id === payload.messageId);
-        if (!message) {
+        const assistantMessage = this._getLastAssistantMessage();
+        if (!assistantMessage) {
+            vscode.window.showWarningMessage('没有可评审的 AI 回答');
             return;
         }
 
         await vscode.commands.executeCommand('aiStudio.reviewView.focus');
         await vscode.commands.executeCommand('aiStudio.generateReview', {
-            messageId: message.id,
-            content: message.content
+            messageId: assistantMessage.id,
+            content: assistantMessage.content
         });
     }
 
@@ -187,6 +224,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
 
         this._isStreaming = true;
+        this._currentAssistantMessageId = undefined;
 
         const config = vscode.workspace.getConfiguration('aiStudio');
         const defaultProvider = config.get<string>('defaultProvider', '');
@@ -202,17 +240,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             return;
         }
 
+        let fullContent = '';
+        let streamingMessageId = 'streaming-' + Date.now();
+
         try {
             const messages: types.Message[] = [
-                ...this._conversation.messages.slice(0, -1),
                 { id: '', role: 'user' as const, content: userContent, timestamp: 0 }
-            ].map((m, i) => ({
-                ...m,
-                id: m.id || `msg-${i}`
-            })) as types.Message[];
-
-            let fullContent = '';
-            let assistantMessageId: string | undefined;
+            ];
 
             await this._aiService.streamChat(
                 providerName,
@@ -222,32 +256,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     temperature
                 },
                 (chunk) => {
-                    if (chunk.done) {
+                    if (chunk.done || !this._view) {
                         return;
                     }
 
                     fullContent += chunk.content;
 
-                    if (!assistantMessageId && this._view) {
-                        this._sendToWebview('chat:stream', {
-                            delta: chunk.content,
-                            isStreaming: false,
-                            model: defaultModel,
-                            provider: providerName
-                        });
-                        assistantMessageId = 'streaming-temp';
-                    } else if (this._view) {
-                        this._sendToWebview('chat:stream', {
-                            delta: chunk.content,
-                            isStreaming: true,
-                            model: defaultModel,
-                            provider: providerName
-                        });
-                    }
+                    const isFirstChunk = fullContent.length === chunk.content.length;
+                    this._sendToWebview('chat:stream', {
+                        id: streamingMessageId,
+                        delta: chunk.content,
+                        isStreaming: !isFirstChunk,
+                        model: defaultModel,
+                        provider: providerName
+                    });
                 }
             );
 
-            if (fullContent) {
+            if (fullContent && this._conversation) {
                 const assistantMessage: Omit<types.Message, 'id' | 'timestamp'> = {
                     role: 'assistant',
                     content: fullContent,
@@ -260,27 +286,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     assistantMessage
                 );
 
-                if (savedMessage && this._conversation) {
-                    this._conversation.messages.push(savedMessage);
+                if (savedMessage) {
+                    this._currentAssistantMessageId = savedMessage.id;
+                    this._conversation.messages = [
+                        this._conversation.messages[0],
+                        savedMessage
+                    ];
+                    this._sendToWebview('chat:setMessages', {
+                        messages: this._conversation.messages
+                    });
                 }
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : '未知错误';
             vscode.window.showErrorMessage(`AI 响应失败：${errorMessage}`);
 
-            const errorMsg: Omit<types.Message, 'id' | 'timestamp'> = {
-                role: 'assistant',
-                content: `抱歉，发生了错误：${errorMessage}`
-            };
+            if (this._conversation) {
+                const errorMsg: Omit<types.Message, 'id' | 'timestamp'> = {
+                    role: 'assistant',
+                    content: `抱歉，发生了错误：${errorMessage}`
+                };
 
-            const savedMessage = await this._storage.addMessage(
-                this._conversation.id,
-                errorMsg
-            );
+                const savedMessage = await this._storage.addMessage(
+                    this._conversation.id,
+                    errorMsg
+                );
 
-            if (savedMessage && this._conversation) {
-                this._conversation.messages.push(savedMessage);
-                this._sendToWebview('chat:response', savedMessage);
+                if (savedMessage) {
+                    this._conversation.messages = [
+                        this._conversation.messages[0],
+                        savedMessage
+                    ];
+                    this._sendToWebview('chat:setMessages', {
+                        messages: this._conversation.messages
+                    });
+                }
             }
         } finally {
             this._isStreaming = false;

@@ -267,11 +267,13 @@ export class AnthropicProvider implements AIProvider {
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
-          if (trimmed.startsWith('data: ')) continue;
           if (!trimmed.startsWith('data:')) continue;
           
+          const dataStr = trimmed.slice(5).trim();
+          if (!dataStr) continue;
+          
           try {
-            const data = JSON.parse(trimmed.slice(5).trim());
+            const data = JSON.parse(dataStr);
             if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') {
               const content = data.delta.text || '';
               if (content) {
