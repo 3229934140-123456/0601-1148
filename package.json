@@ -1,0 +1,300 @@
+{
+  "name": "ai-assistant-studio",
+  "displayName": "AI 助手工作室",
+  "description": "面向产品经理和提示词作者的 AI 应用平台 IDE 插件，支持提示词迭代、样例测试、对比评审等全流程工作流",
+  "version": "0.1.0",
+  "publisher": "ai-studio",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Chat",
+    "Snippets",
+    "Testing"
+  ],
+  "activationEvents": [
+    "onView:aiStudio.chatView",
+    "onView:aiStudio.promptFilesView",
+    "onView:aiStudio.samplesView",
+    "onView:aiStudio.compareView",
+    "onView:aiStudio.variablesView",
+    "onView:aiStudio.reviewView",
+    "onView:aiStudio.favoritesView",
+    "onCommand:aiStudio.askSelection",
+    "onCommand:aiStudio.newPrompt",
+    "onCommand:aiStudio.runCompare"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ai-studio",
+          "title": "AI 助手工作室",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ai-studio": [
+        {
+          "id": "aiStudio.chatView",
+          "name": "侧边聊天",
+          "type": "webview"
+        },
+        {
+          "id": "aiStudio.promptFilesView",
+          "name": "提示词文件",
+          "type": "tree"
+        },
+        {
+          "id": "aiStudio.samplesView",
+          "name": "样例集",
+          "type": "tree"
+        },
+        {
+          "id": "aiStudio.compareView",
+          "name": "对比运行",
+          "type": "webview"
+        },
+        {
+          "id": "aiStudio.variablesView",
+          "name": "变量面板",
+          "type": "tree"
+        },
+        {
+          "id": "aiStudio.reviewView",
+          "name": "评审报告",
+          "type": "webview"
+        },
+        {
+          "id": "aiStudio.favoritesView",
+          "name": "收藏库",
+          "type": "tree"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "aiStudio.askSelection",
+        "title": "AI 助手：选中文本提问"
+      },
+      {
+        "command": "aiStudio.newPrompt",
+        "title": "AI 助手：新建提示词",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "aiStudio.savePromptVersion",
+        "title": "AI 助手：保存提示词版本",
+        "icon": "$(save)"
+      },
+      {
+        "command": "aiStudio.rollbackPrompt",
+        "title": "AI 助手：回滚到旧版本",
+        "icon": "$(history)"
+      },
+      {
+        "command": "aiStudio.insertVariable",
+        "title": "AI 助手：插入变量",
+        "icon": "$(symbol-variable)"
+      },
+      {
+        "command": "aiStudio.runCompare",
+        "title": "AI 助手：对比运行",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "aiStudio.rateResponse",
+        "title": "AI 助手：给回答打分",
+        "icon": "$(star)"
+      },
+      {
+        "command": "aiStudio.markHallucination",
+        "title": "AI 助手：标记幻觉点",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "aiStudio.generateRewrite",
+        "title": "AI 助手：生成改写建议",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "aiStudio.extractAcceptance",
+        "title": "AI 助手：提取验收标准",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "aiStudio.addSnippet",
+        "title": "AI 助手：创建常用片段",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiStudio.searchHistory",
+        "title": "AI 助手：搜索历史",
+        "icon": "$(search)"
+      },
+      {
+        "command": "aiStudio.exportTestRecords",
+        "title": "AI 助手：导出测试记录",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "aiStudio.shareTemplate",
+        "title": "AI 助手：分享模板",
+        "icon": "$(share)"
+      },
+      {
+        "command": "aiStudio.addSample",
+        "title": "AI 助手：添加样例",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiStudio.addToFavorites",
+        "title": "AI 助手：添加到收藏",
+        "icon": "$(star-empty)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "aiStudio.newPrompt",
+          "when": "view == aiStudio.promptFilesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiStudio.addSample",
+          "when": "view == aiStudio.samplesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiStudio.runCompare",
+          "when": "view == aiStudio.compareView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiStudio.addSnippet",
+          "when": "view == aiStudio.favoritesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiStudio.searchHistory",
+          "when": "view == aiStudio.favoritesView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "aiStudio.exportTestRecords",
+          "when": "view == aiStudio.favoritesView",
+          "group": "navigation@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "aiStudio.askSelection",
+          "when": "editorHasSelection",
+          "group": "ai-studio@1"
+        },
+        {
+          "command": "aiStudio.savePromptVersion",
+          "when": "editorLangId == markdown || editorLangId == plaintext",
+          "group": "ai-studio@2"
+        },
+        {
+          "command": "aiStudio.insertVariable",
+          "when": "editorTextFocus",
+          "group": "ai-studio@3"
+        },
+        {
+          "command": "aiStudio.markHallucination",
+          "when": "editorHasSelection",
+          "group": "ai-studio@4"
+        },
+        {
+          "command": "aiStudio.addToFavorites",
+          "when": "editorHasSelection",
+          "group": "ai-studio@5"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI 助手工作室",
+      "properties": {
+        "aiStudio.dataDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "数据存储目录，留空则使用工作区 .ai-studio 目录"
+        },
+        "aiStudio.defaultModel": {
+          "type": "string",
+          "default": "gpt-3.5-turbo",
+          "description": "默认使用的 AI 模型"
+        },
+        "aiStudio.providers.openai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API Key"
+        },
+        "aiStudio.providers.openai.baseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "OpenAI API 基础地址"
+        },
+        "aiStudio.providers.anthropic.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API Key"
+        },
+        "aiStudio.providers.ollama.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama 本地服务地址"
+        },
+        "aiStudio.providers.ollama.model": {
+          "type": "string",
+          "default": "llama2",
+          "description": "Ollama 默认模型"
+        },
+        "aiStudio.forbiddenWords": {
+          "type": "array",
+          "default": [],
+          "description": "禁用词列表，AI 回答中包含这些词会被标记",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aiStudio.maxHistoryPerPrompt": {
+          "type": "number",
+          "default": 20,
+          "description": "每个提示词保留的最大历史版本数"
+        },
+        "aiStudio.temperature": {
+          "type": "number",
+          "default": 0.7,
+          "description": "默认采样温度",
+          "minimum": 0,
+          "maximum": 2
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^18.x",
+    "typescript": "^5.3.0",
+    "eslint": "^8.54.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0"
+  },
+  "dependencies": {
+    "marked": "^11.0.0"
+  }
+}
